@@ -2,8 +2,10 @@
 
 ## A Guardrailed Agentic Customer Support System
 
-Foundation, synthetic domain data, and knowledge retrieval, using Python 3.11+.
-There is no agent workflow, complaint CRUD, API server, or frontend application yet.
+Foundation, synthetic domain data, knowledge retrieval, and a single-turn agent,
+using Python 3.11+.
+There is no complaint CRUD, persistent conversation memory, API server, or frontend
+application yet.
 
 ## Local setup
 
@@ -38,7 +40,7 @@ An optional key uses `SecretStr` to mask it in normal representations.
 
 - `app/`: Python package and configuration.
 - `app/schemas/`: validated synthetic domain models.
-- `app/agent/`: reserved for future agent workflows.
+- `app/agent/`: LangGraph state, routing, nodes, model integration, and live factory.
 - `app/retrieval/`: OpenAI embeddings and persistent Chroma search.
 - `app/tools/`: reserved for future support tools.
 - `app/guardrails/`: reserved for future guardrails.
@@ -51,8 +53,8 @@ An optional key uses `SecretStr` to mask it in normal representations.
 ## Planned future stack
 
 OpenAI, LangGraph, Pydantic, Chroma, SQLite/SQLAlchemy, FastAPI, Streamlit,
-Pytest, and Docker. This stage installs Pydantic Settings, OpenAI, and Chroma.
-The agent, API, database actions, and UI are deferred.
+Pytest, and Docker. This stage installs Pydantic Settings, OpenAI, Chroma, and LangGraph.
+The API, database actions, persistent memory, and UI are deferred.
 
 See `DECISIONS.md` for foundation decisions. Run `git status` to inspect the
 current changes.
@@ -76,7 +78,7 @@ Validation checks field constraints, duplicate IDs, foreign references, and
 complaint ownership. Failure prompts are evaluation inputs with expected behavior;
 they do not constitute an implemented or tested agent guardrail.
 
-Next: verify live retrieval quality before adding the agent workflow.
+Next: add SQLite-backed support tools, then checkpointing and human approval.
 
 ## Knowledge retrieval
 
@@ -125,3 +127,62 @@ The question about viewing another customer’s payment records ranked the pendi
 payment article first and the expected privacy article second. Keep multiple
 sources available to the later agent; privacy and authorization must be enforced
 independently of retrieval ranking. These results cover this small demo corpus only.
+
+## Single-turn support agent
+
+The LangGraph workflow routes one message through one of four branches.
+`SECURESUPPORT_CHAT_MODEL` defaults to `gpt-4.1-mini` and can be configured in
+your private `.env`. The router and policy answer use structured OpenAI Responses
+outputs, with response storage disabled for those calls.
+
+```mermaid
+flowchart TD
+    Start --> Route
+    Route --> Direct[Greeting or capabilities reply]
+    Route --> Retrieve[Search top three policies]
+    Retrieve --> Answer[Generate answer with validated source IDs]
+    Route --> Tool[Report action unavailable]
+    Route --> Scope[Report out of scope]
+    Route --> Error[Safe error reply]
+    Retrieve --> Error
+    Direct --> End
+    Answer --> End
+    Tool --> End
+    Scope --> End
+    Error --> End
+```
+
+```sh
+python -m scripts.index_knowledge
+python -m scripts.chat "Hello"
+python -m scripts.chat "How do I request a refund?"
+python -m scripts.chat "Refund pay_001"
+python -m unittest discover -s tests -v
+```
+
+Each chat command is independent: there is no conversation history, authentication,
+checkpoint, interrupt, or resume yet. Questions and retrieved policy text are sent
+to OpenAI and incur usage. Greeting and action-unavailable branches do not access
+the knowledge index. The tool branch performs no lookup, write, refund, or escalation.
+All responses report `action_performed: false`.
+
+The response includes route, status, answer, and source IDs. Policy answers require
+at least one source from the retrieved set. Invented or absent source IDs, empty
+retrieval results, and self-reported insufficient evidence produce an insufficient
+context reply. Dependency failures produce a generic error without SDK exception
+details. Source-ID validation proves traceability, not that every claim is supported.
+Safety rules in prompts are preliminary; dedicated input/output guardrails and
+authorization enforcement are still later stages. Nearest-neighbor retrieval still
+has no calibrated relevance cutoff.
+
+Five live smoke cases cover greeting, refund policy, cross-customer privacy policy,
+a refund action request, and an unrelated investment request. Their route/status
+checks and actual answers are saved in `evaluation/reports/agent_live_smoke.json`.
+These smoke cases do not establish general routing accuracy or guardrail robustness.
+The earlier retrieval report records its original corpus and case hashes; ASCII
+cleanup and later edits mean it is historical rather than a score for every newer
+version of the data.
+
+Implementation references: [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api),
+[OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+[GPT-4.1 mini](https://developers.openai.com/api/docs/models/gpt-4.1-mini).

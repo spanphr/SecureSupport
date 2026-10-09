@@ -36,3 +36,19 @@
     report live semantic quality only after an actual API-backed evaluation.
 19. Keep generated vectors and environments out of Git. Do not add answer
     generation, routing, or sensitive actions during this retrieval step.
+
+## First agent workflow
+
+20. Use a finite LangGraph StateGraph: classify, conditionally route, and terminate.
+    Keep dependency injection for model and searcher so node behavior is testable offline.
+21. Use structured OpenAI Responses outputs for routing and grounded policy answers;
+    default chat model is gpt-4.1-mini, configurable independently of embeddings.
+22. Implement direct, retrieval, tool-request, and out-of-scope routes. The tool
+    branch is an explicit unavailable response until database tools are implemented.
+23. Treat each request as independent; checkpointing and human approval are deferred.
+24. Require policy source IDs to come from the retrieved set. This is source
+    validation, not a complete entailment check or a replacement for guardrails.
+25. Keep API errors out of user-facing responses. Store no Responses API objects
+    remotely via these chat calls; local smoke reports contain demo requests only.
+26. Keep the prior live retrieval report as historical evidence with its corpus
+    hashes rather than claiming that older scores apply to the modified dataset.

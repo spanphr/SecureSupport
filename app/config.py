@@ -23,3 +23,4 @@ class Settings(BaseSettings):
 
     embedding_model: str = Field(default="text-embedding-3-small", min_length=1)
     chroma_path: Path = Path(__file__).resolve().parents[1] / "data" / "chroma"
+    chat_model: str = Field(default="gpt-4.1-mini", min_length=1)

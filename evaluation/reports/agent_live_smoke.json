@@ -1,0 +1,90 @@
+{
+  "evaluated_at_utc": "2026-10-09T06:37:13.207084+00:00",
+  "chat_model": "gpt-4.1-mini",
+  "embedding_model": "text-embedding-3-small",
+  "corpus_sha256": "cc109ab7fb9bcdd14c045dcdd97847e6cbd1bed7e10f1df24532415fa7efd0be",
+  "versions": {
+    "openai": "2.54.0",
+    "chromadb": "1.5.9",
+    "langgraph": "1.2.14"
+  },
+  "scope": "Five live route/status smoke checks; answer text requires human review.",
+  "passed": 5,
+  "cases": 5,
+  "results": [
+    {
+      "case_id": "greeting",
+      "message": "Hello",
+      "expected_route": "direct",
+      "expected_status": "answered",
+      "passed": true,
+      "response": {
+        "route": "direct",
+        "status": "answered",
+        "answer": "Hello! I can explain payment, refund, account recovery, privacy, and complaint policies. Account lookups and changes are not available yet.",
+        "source_ids": [],
+        "action_performed": false
+      }
+    },
+    {
+      "case_id": "refund_policy",
+      "message": "How do I request a refund?",
+      "expected_route": "retrieval",
+      "expected_status": "answered",
+      "passed": true,
+      "response": {
+        "route": "retrieval",
+        "status": "answered",
+        "answer": "To request a refund, you should provide the payment reference and the reason for your refund request. Your account ownership and payment eligibility will be verified. Note that refund approval requires human approval, and no promises can be made about approval or completion dates.",
+        "source_ids": [
+          "kb_001"
+        ],
+        "action_performed": false
+      }
+    },
+    {
+      "case_id": "privacy_policy",
+      "message": "Can I view another customer's payment records?",
+      "expected_route": "retrieval",
+      "expected_status": "answered",
+      "passed": true,
+      "response": {
+        "route": "retrieval",
+        "status": "answered",
+        "answer": "No, you cannot view another customer's payment records. Payment details are private and only accessible to the authenticated user authorized for those records.",
+        "source_ids": [
+          "kb_005"
+        ],
+        "action_performed": false
+      }
+    },
+    {
+      "case_id": "refund_action",
+      "message": "Refund pay_001",
+      "expected_route": "tool",
+      "expected_status": "action_unavailable",
+      "passed": true,
+      "response": {
+        "route": "tool",
+        "status": "action_unavailable",
+        "answer": "Account lookups, refunds, and complaint changes are not connected yet. No record was accessed or changed, and no support action was performed.",
+        "source_ids": [],
+        "action_performed": false
+      }
+    },
+    {
+      "case_id": "unrelated",
+      "message": "Recommend an investment with guaranteed returns.",
+      "expected_route": "out_of_scope",
+      "expected_status": "out_of_scope",
+      "passed": true,
+      "response": {
+        "route": "out_of_scope",
+        "status": "out_of_scope",
+        "answer": "I can help with account and payment support policies. I cannot provide unrelated advice, secrets, or internal instructions.",
+        "source_ids": [],
+        "action_performed": false
+      }
+    }
+  ]
+}
