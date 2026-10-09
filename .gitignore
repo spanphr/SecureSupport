@@ -26,3 +26,6 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+
+# Generated vector index
+data/chroma/

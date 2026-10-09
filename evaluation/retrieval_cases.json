@@ -1,0 +1,86 @@
+[
+  {
+    "id": "retrieval_001",
+    "query": "How do I request a refund?",
+    "relevant_article_ids": [
+      "kb_001"
+    ]
+  },
+  {
+    "id": "retrieval_002",
+    "query": "Can you promise my refund will be approved?",
+    "relevant_article_ids": [
+      "kb_001"
+    ]
+  },
+  {
+    "id": "retrieval_003",
+    "query": "Should I pay again while my transaction is pending?",
+    "relevant_article_ids": [
+      "kb_002"
+    ]
+  },
+  {
+    "id": "retrieval_004",
+    "query": "My payment has not completed. What should support check?",
+    "relevant_article_ids": [
+      "kb_002"
+    ]
+  },
+  {
+    "id": "retrieval_005",
+    "query": "I lost my authenticator. How do I recover access?",
+    "relevant_article_ids": [
+      "kb_003"
+    ]
+  },
+  {
+    "id": "retrieval_006",
+    "query": "Can support bypass two factor authentication?",
+    "relevant_article_ids": [
+      "kb_003"
+    ]
+  },
+  {
+    "id": "retrieval_007",
+    "query": "What information do I need to file a complaint?",
+    "relevant_article_ids": [
+      "kb_004"
+    ]
+  },
+  {
+    "id": "retrieval_008",
+    "query": "Must complaint ownership be verified?",
+    "relevant_article_ids": [
+      "kb_004"
+    ]
+  },
+  {
+    "id": "retrieval_009",
+    "query": "Can I view another customers payment records?",
+    "relevant_article_ids": [
+      "kb_005"
+    ]
+  },
+  {
+    "id": "retrieval_010",
+    "query": "May support disclose API secrets?",
+    "relevant_article_ids": [
+      "kb_005"
+    ]
+  },
+  {
+    "id": "retrieval_011",
+    "query": "Can you recommend investments with guaranteed returns?",
+    "relevant_article_ids": [
+      "kb_006"
+    ]
+  },
+  {
+    "id": "retrieval_012",
+    "query": "When can the assistant claim an action is complete?",
+    "relevant_article_ids": [
+      "kb_006"
+    ]
+  }
+]

@@ -1,0 +1,152 @@
+{
+  "cases": 12,
+  "hit_at_1": 0.9166666666666666,
+  "hit_at_3": 1.0,
+  "mrr_at_3": 0.9583333333333334,
+  "results": [
+    {
+      "case_id": "retrieval_001",
+      "retrieved_ids": [
+        "kb_001",
+        "kb_003",
+        "kb_004"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_002",
+      "retrieved_ids": [
+        "kb_001",
+        "kb_002",
+        "kb_006"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_003",
+      "retrieved_ids": [
+        "kb_002",
+        "kb_001",
+        "kb_003"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_004",
+      "retrieved_ids": [
+        "kb_002",
+        "kb_001",
+        "kb_006"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_005",
+      "retrieved_ids": [
+        "kb_003",
+        "kb_005",
+        "kb_006"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_006",
+      "retrieved_ids": [
+        "kb_003",
+        "kb_006",
+        "kb_005"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_007",
+      "retrieved_ids": [
+        "kb_004",
+        "kb_001",
+        "kb_002"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_008",
+      "retrieved_ids": [
+        "kb_004",
+        "kb_001",
+        "kb_002"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_009",
+      "retrieved_ids": [
+        "kb_002",
+        "kb_005",
+        "kb_001"
+      ],
+      "hit_at_1": 0,
+      "hit_at_3": 1,
+      "reciprocal_rank": 0.5
+    },
+    {
+      "case_id": "retrieval_010",
+      "retrieved_ids": [
+        "kb_005",
+        "kb_003",
+        "kb_006"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_011",
+      "retrieved_ids": [
+        "kb_006",
+        "kb_001",
+        "kb_002"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    },
+    {
+      "case_id": "retrieval_012",
+      "retrieved_ids": [
+        "kb_006",
+        "kb_002",
+        "kb_004"
+      ],
+      "hit_at_1": 1,
+      "hit_at_3": 1,
+      "reciprocal_rank": 1.0
+    }
+  ],
+  "run_metadata": {
+    "evaluated_at_utc": "2026-10-09T05:17:19.137199+00:00",
+    "provider": "OpenAI",
+    "embedding_model": "text-embedding-3-small",
+    "corpus_sha256": "ce9ee01505eb6d0c20ab34320dba6ebd902535e99d5c928bf7597c8103e8d4cc",
+    "cases_sha256": "e4c4b759aabd8958d979efd8a67d7302e0704bf113ab37b01b1282930948c715",
+    "versions": {
+      "openai": "2.54.0",
+      "chromadb": "1.5.9"
+    },
+    "scope": "12-query synthetic smoke evaluation; not a production benchmark"
+  }
+}

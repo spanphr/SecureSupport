@@ -24,3 +24,15 @@
 13. Treat knowledge articles as demo policies and failure prompts as future
     evaluation cases. No agent, CRUD actions, or runtime guardrails are added yet.
 14. Use standard-library unittest for data checks; no test dependency is needed.
+
+## Knowledge retrieval
+
+15. Use explicit OpenAI vectors and Chroma cosine distance; no implicit embedding
+    function or model download. Default model: text-embedding-3-small.
+16. Index knowledge articles only; return source IDs and text for later grounding.
+17. Version collections by article content and embedding provider/model identity
+    so changed policies and models cannot silently reuse an old index.
+18. Report Hit@1, Hit@3, and MRR@3 on a 12-query demo set. Validate plumbing offline;
+    report live semantic quality only after an actual API-backed evaluation.
+19. Keep generated vectors and environments out of Git. Do not add answer
+    generation, routing, or sensitive actions during this retrieval step.

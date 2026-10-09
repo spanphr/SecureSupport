@@ -1,8 +1,9 @@
 """Environment-based settings for SecureSupport (Python 3.11+)."""
 
+from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,3 +20,6 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
     openai_api_key: SecretStr | None = None
+
+    embedding_model: str = Field(default="text-embedding-3-small", min_length=1)
+    chroma_path: Path = Path(__file__).resolve().parents[1] / "data" / "chroma"
