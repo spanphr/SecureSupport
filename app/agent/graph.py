@@ -1,39 +1,38 @@
-"""Finite single-turn graph, with explicit conditional branches and no tool execution."""
+"""Bounded workflow graph.
+
+This is a workflow, not an autonomous agent: the path is fixed, the loop is
+impossible, and every branch terminates. Each non-terminal node sets `next`, which
+is the only routing signal - there is no free-form planner step.
+"""
+
 from langgraph.graph import END, START, StateGraph
-from app.agent.model import SupportModel
-from app.agent.nodes import PolicySearcher, SupportNodes
-from app.agent.state import SupportState
-from app.schemas.support import SupportRequest, SupportResponse
+
+from app.agent.nodes import PipelineNodes
+from app.agent.state import PipelineState
+
+NODE_NAMES = (
+    "validate", "decide", "respond", "clarify", "refuse", "retrieve",
+    "compose", "tool", "escalate", "check_output", "failure",
+)
+# Every branching node must set `next` on every return path. Terminal nodes have a
+# plain edge to END; they never consult `next`, so no stale value can create a cycle.
+BRANCHING = ("validate", "decide", "retrieve", "compose", "tool", "escalate")
+TERMINAL = ("respond", "clarify", "refuse", "check_output", "failure")
 
 
-def build_graph(model: SupportModel, retriever: PolicySearcher):
-    nodes = SupportNodes(model, retriever)
-    graph = StateGraph(SupportState)
-    for name in ('route', 'direct', 'retrieve', 'answer', 'tool', 'out_of_scope', 'failure'):
+def _route(state: PipelineState) -> str:
+    return state["next"] if "next" in state else "failure"
+
+
+def build_graph(nodes: PipelineNodes):
+    graph = StateGraph(PipelineState)
+    for name in NODE_NAMES:
         graph.add_node(name, getattr(nodes, name))
-    graph.add_edge(START, 'route')
-    graph.add_conditional_edges(
-        'route', lambda state: 'failure' if state.get('failed') else state['route'],
-        {'direct': 'direct', 'retrieval': 'retrieve', 'tool': 'tool',
-         'out_of_scope': 'out_of_scope', 'failure': 'failure'},
-    )
-    graph.add_conditional_edges(
-        'retrieve', lambda state: 'failure' if state.get('failed') else 'answer',
-        {'failure': 'failure', 'answer': 'answer'},
-    )
-    for name in ('direct', 'answer', 'tool', 'out_of_scope', 'failure'):
+
+    targets = {name: name for name in NODE_NAMES}
+    graph.add_edge(START, "validate")
+    for name in BRANCHING:
+        graph.add_conditional_edges(name, _route, targets)
+    for name in TERMINAL:
         graph.add_edge(name, END)
     return graph.compile()
-
-
-class SupportAgent:
-    def __init__(self, model: SupportModel, retriever: PolicySearcher):
-        self.graph = build_graph(model, retriever)
-
-    def run(self, message: str) -> SupportResponse:
-        request = SupportRequest(message=message)
-        # Start fresh for every request; multi-turn checkpoints are a later stage.
-        state = self.graph.invoke({"message": request.message, "route": None,
-                                   "hits": [], "source_ids": [], "failed": False})
-        return SupportResponse(route=state['route'], status=state['status'],
-                               answer=state['answer'], source_ids=state['source_ids'])
