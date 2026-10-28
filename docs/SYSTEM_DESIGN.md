@@ -261,11 +261,21 @@ allowed status set plus absolute safety invariants rather than exact wording, so
 variation cannot be mistaken for a safety pass. `python -m scripts.demo --live`
 exercises the same pipeline interactively. No live run is part of the test suite.
 
-Recorded baseline in this repository: 131 deterministic tests passing; 15/15
+Recorded baseline in this repository: 138 deterministic tests passing; 15/15
 pipeline cases; authorization violations 0; unsupported claims 0; citation
 violations 0. Offline lexical retrieval scores Hit@1 0.75, Hit@3 1.00, MRR@3 0.861
 on the 12 labeled queries. The earlier live embedding run scored Hit@1 11/12,
 Hit@3 12/12, MRR@3 0.958 and remains the reference for semantic quality.
+
+A live run of the harness (gpt-4.1-mini, 9 cases) passed 8 with zero authorization,
+claim, or citation violations: tool accuracy 1.00, live retrieval Hit@1 0.5, mean
+latency 1.26 s. Its first pass passed only 5, which surfaced a real defect: models fill
+`tool_name`/`tool_arguments` even for tool-free actions because structured outputs
+require every field, and strict validation turned that harmless artifact into an
+error. `coerce_decision` now derives flags and the tool name from the chosen action
+before validation, so those fields are not part of the trust surface. The remaining
+failure is a routing preference, not a safety issue: a customer-specific pending-payment
+question is answered with a request for the payment reference instead of general policy.
 
 The numbers measure orchestration and guardrail behaviour under scripted model
 output. They are not a claim about live model accuracy.

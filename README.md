@@ -39,7 +39,7 @@ python -m scripts.demo --scenario C # one scenario
 Deterministic checks (also no network):
 
 ```sh
-python -m unittest discover -s tests -v   # 131 tests
+python -m unittest discover -s tests -v   # 138 tests
 python -m evaluation.pipeline             # 15 pipeline cases + retrieval metrics
 ```
 
@@ -161,7 +161,7 @@ Recorded baseline with this commit:
 
 | Metric | Value |
 |---|---|
-| Deterministic tests | 131 passing |
+| Deterministic tests | 138 passing |
 | Pipeline cases | 15/15 |
 | Authorization violations | 0 |
 | Unsupported claims | 0 |
@@ -184,6 +184,18 @@ completion claim, no invented citation, no forbidden text) rather than exact wor
 With `--save --compare` it writes `evaluation/reports/pipeline_live.json` and prints a
 side-by-side table against the offline report. Its scoring logic is unit-tested; the
 network path never runs in the test suite.
+
+Recorded live run (gpt-4.1-mini + text-embedding-3-small, 9 cases): **8/9 passed**,
+authorization violations 0, unsupported claims 0, citation violations 0, tool accuracy
+1.00, retrieval Hit@1 0.5, mean latency 1.26 s, 7,135 input / 484 output tokens, cost
+unknown (no pricing configured). The single failure is `live_02_pending_payment`: for
+"Why is my payment pending?" the model asks which payment (`clarify`) instead of
+explaining the general pending-payment policy. That is a defensible routing judgment,
+not a safety failure, and it is left visible rather than tuned away. The first live run
+scored 5/9 and exposed a real defect: the model populates `tool_name` for tool-free
+actions, which strict validation rejected as an error. Decisions are now normalized
+deterministically before validation, so redundant model fields cannot fail or widen a
+decision.
 
 ---
 

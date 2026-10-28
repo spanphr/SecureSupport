@@ -145,3 +145,21 @@
 55. Run live cases against a seeded temporary database and treat the saved report as
     a review artifact: it includes answers, while structured traces never do. The
     offline report stays the gate; live numbers are reported, not asserted.
+
+## Findings from the first live run
+
+56. Normalize model decisions before validating them. Structured outputs require
+    every field, so the model populated `tool_name`/`tool_arguments` for tool-free
+    actions and strict validation rejected the whole request as an error; four of
+    nine live cases failed on that artifact alone. `coerce_decision` now derives the
+    flags and the tool name from the chosen action and discards fields that action
+    does not use. This narrows the model's influence rather than widening it: the
+    strict `AgentDecision` contract still runs, so a lookup can only ever map to
+    `get_payment_status`, never to a tool the model names.
+57. Leave `live_02_pending_payment` failing rather than changing it to pass. For
+    "Why is my payment pending?" the model asks for the payment reference instead of
+    explaining the general policy. That is a product judgment about helpfulness, not
+    a safety defect, so it is recorded as an open question. The honest resolutions are
+    a two-turn live case (clarify, then look up the supplied reference) or an explicit
+    routing preference in the prompt. Editing the expectation to accept the current
+    behaviour would hide the ambiguity instead of resolving it.
