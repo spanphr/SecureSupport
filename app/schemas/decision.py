@@ -50,6 +50,26 @@ TOOL_ACTIONS = frozenset(TOOL_FOR_ACTION)
 WRITE_ACTIONS = frozenset({Action.CREATE_TICKET})
 
 
+class AgentDecisionDraft(Record):
+    """Permissive shape of a raw model response, before normalization.
+
+    Structured outputs require every field to be present, so a model routinely
+    fills tool fields even when it chose a tool-free action. Those values are
+    discarded by `coerce_decision` rather than trusted; `AgentDecision` still
+    enforces the strict contract on the result.
+    """
+
+    category: Category
+    action: Action
+    needs_retrieval: bool
+    needs_tool: bool
+    needs_clarification: bool
+    needs_escalation: bool
+    tool_name: str | None = Field(default=None, min_length=1, max_length=64)
+    tool_arguments: dict[str, str] | None = None
+    clarification_question: str | None = Field(default=None, min_length=1, max_length=300)
+
+
 class AgentDecision(Record):
     """A single structured decision. No self-reported confidence is trusted."""
 
@@ -106,3 +126,26 @@ class AgentDecision(Record):
     @property
     def is_write(self) -> bool:
         return self.action in WRITE_ACTIONS
+
+
+def coerce_decision(draft: AgentDecisionDraft) -> AgentDecision:
+    """Derive the enforced fields from the chosen action.
+
+    Routing, authorization, and the tool that may run all depend on `action`.
+    Deriving them here means a stray model-supplied `tool_name` cannot widen what
+    is allowed, and a redundant flag cannot silently contradict the decision.
+    """
+    tool_action = draft.action in TOOL_ACTIONS
+    return AgentDecision(
+        category=draft.category,
+        action=draft.action,
+        needs_retrieval=(draft.action is Action.ANSWER_POLICY)
+        or (tool_action and draft.needs_retrieval),
+        needs_tool=tool_action,
+        needs_clarification=draft.action is Action.CLARIFY,
+        needs_escalation=draft.action is Action.ESCALATE,
+        tool_name=TOOL_FOR_ACTION.get(draft.action) if tool_action else None,
+        tool_arguments=(draft.tool_arguments or {}) if tool_action else None,
+        clarification_question=(
+            draft.clarification_question if draft.action is Action.CLARIFY else None),
+    )

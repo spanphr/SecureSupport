@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from app.agent.model import OpenAISupportModel
 from app.config import Settings
-from app.schemas.decision import AgentDecision
+from app.schemas.decision import AgentDecisionDraft
 from app.schemas.pipeline import ConversationTurn, GroundedAnswer
 from app.schemas.retrieval import RetrievalHit
 from tests.helpers import decision, tool_call
@@ -46,11 +46,38 @@ class ModelAdapterTests(unittest.TestCase):
         self.assertEqual(result.usage.output_tokens, 25)
         arguments = self.sdk.return_value.responses.parse.call_args.kwargs
         self.assertFalse(arguments["store"])
-        self.assertIs(arguments["text_format"], AgentDecision)
+        self.assertIs(arguments["text_format"], AgentDecisionDraft)
         self.assertEqual(arguments["model"], "gpt-4.1-mini")
         payload = json.loads(arguments["input"][1]["content"])
         self.assertEqual(payload["message"], "Refund policy?")
         self.assertEqual(payload["tools"], [{"name": "x"}])
+
+    def test_stray_tool_fields_from_the_model_are_discarded(self):
+        # Structured outputs require every field, so models fill tool fields even
+        # for tool-free actions. That must not fail or widen the decision.
+        draft = AgentDecisionDraft(
+            category="refunds", action="answer_policy", needs_retrieval=True,
+            needs_tool=False, needs_clarification=False, needs_escalation=False,
+            tool_name="get_payment_status", tool_arguments={"record_id": "pay_001"},
+        )
+        self.sdk.return_value.responses.parse.return_value = SimpleNamespace(
+            output_parsed=draft, usage=None)
+        result = self.model.decide(message="Refund policy?", history=[], tools=[])
+        self.assertEqual(result.value.action, "answer_policy")
+        self.assertIsNone(result.value.tool_name)
+        self.assertIsNone(result.value.tool_arguments)
+        self.assertFalse(result.value.needs_tool)
+
+    def test_tool_name_is_derived_from_the_action_not_from_the_model(self):
+        draft = AgentDecisionDraft(
+            category="payments", action="lookup_payment", needs_retrieval=False,
+            needs_tool=True, needs_clarification=False, needs_escalation=False,
+            tool_name="delete_account", tool_arguments={"record_id": "pay_002"},
+        )
+        self.sdk.return_value.responses.parse.return_value = SimpleNamespace(
+            output_parsed=draft, usage=None)
+        result = self.model.decide(message="Status of pay_002?", history=[], tools=[])
+        self.assertEqual(result.value.tool_name, "get_payment_status")
 
     def test_compose_receives_articles_and_confirmed_tool_results(self):
         hit = RetrievalHit(article_id="kb_001", title="Refund requests",

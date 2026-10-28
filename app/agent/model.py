@@ -12,7 +12,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.schemas.decision import AgentDecision
+from app.schemas.decision import AgentDecision, AgentDecisionDraft, coerce_decision
 from app.schemas.pipeline import ConversationTurn, GroundedAnswer, LLMUsage, ToolCallRecord
 from app.schemas.retrieval import RetrievalHit
 
@@ -47,8 +47,11 @@ Rules:
 - Never claim an action was performed. Only tools decide outcomes.
 - tool_arguments is a flat object of strings. For lookups use exactly record_id. For create_ticket use
   exactly subject and message. For get_account_status use an empty object.
-- Use the tool name mapped to the action you chose; no other tool exists.
-- If a lookup needs an id the customer did not provide, choose clarify and ask for it.
+- Leave tool_name and tool_arguments null for actions that use no tool. Their values are ignored
+  for those actions, but null is clearer.
+- A general question about policy or process is answer_policy, even when it mentions the customer's
+  own payment or account. Choose clarify only when the customer asks about one specific record and
+  gave no reference for it.
 Format answers in plain ASCII punctuation."""
 
 COMPOSE_INSTRUCTIONS = """You are the answer writer for SecureSupport, a demo customer support assistant.
@@ -105,11 +108,13 @@ class OpenAISupportModel:
             model=self.model, store=False, max_output_tokens=300,
             input=[{"role": "system", "content": DECISION_INSTRUCTIONS},
                    {"role": "user", "content": json.dumps(payload, ensure_ascii=True)}],
-            text_format=AgentDecision,
+            text_format=AgentDecisionDraft,
         )
         if response.output_parsed is None:
             raise ValueError("No structured decision received.")
-        return LLMResult(value=response.output_parsed, usage=_usage(response))
+        # Normalize before strict validation: flags and the tool name are derived
+        # from the action, never taken from the model's redundant fields.
+        return LLMResult(value=coerce_decision(response.output_parsed), usage=_usage(response))
 
     def compose(self, *, message: str, history: list[ConversationTurn],
                 hits: list[RetrievalHit],

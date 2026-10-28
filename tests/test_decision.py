@@ -2,7 +2,14 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.schemas.decision import Action, AgentDecision, Category, TOOL_FOR_ACTION
+from app.schemas.decision import (
+    Action,
+    AgentDecision,
+    AgentDecisionDraft,
+    Category,
+    TOOL_FOR_ACTION,
+    coerce_decision,
+)
 from tests.helpers import decision
 
 
@@ -90,6 +97,51 @@ class DecisionConsistencyTests(unittest.TestCase):
                                   needs_retrieval=False, needs_tool=True,
                                   tool_name="get_ticket_status",
                                   tool_arguments={"record_id": "tkt_001"}).is_write)
+
+
+def draft(**overrides) -> AgentDecisionDraft:
+    base = dict(
+        category="payments", action="answer_policy", needs_retrieval=True,
+        needs_tool=False, needs_clarification=False, needs_escalation=False,
+    )
+    base.update(overrides)
+    return AgentDecisionDraft(**base)
+
+
+class CoercionTests(unittest.TestCase):
+    def test_tool_free_actions_discard_stray_tool_fields(self):
+        built = coerce_decision(draft(tool_name="get_payment_status",
+                                      tool_arguments={"record_id": "pay_001"}))
+        self.assertIsNone(built.tool_name)
+        self.assertIsNone(built.tool_arguments)
+        self.assertFalse(built.needs_tool)
+
+    def test_flags_and_tool_name_come_from_the_action(self):
+        built = coerce_decision(draft(
+            action=Action.LOOKUP_PAYMENT, needs_retrieval=True, needs_tool=False,
+            tool_name="issue_refund", tool_arguments={"record_id": "pay_001"}))
+        self.assertTrue(built.needs_tool)
+        self.assertTrue(built.needs_retrieval)
+        self.assertEqual(built.tool_name, "get_payment_status")
+
+    def test_tool_arguments_default_to_empty_for_no_argument_tools(self):
+        built = coerce_decision(draft(action=Action.LOOKUP_ACCOUNT,
+                                      needs_retrieval=False, tool_arguments=None))
+        self.assertEqual(built.tool_arguments, {})
+
+    def test_contradictory_flags_are_overwritten(self):
+        built = coerce_decision(draft(category="support_scope", action=Action.ESCALATE,
+                                      needs_retrieval=True, needs_escalation=False))
+        self.assertTrue(built.needs_escalation)
+        self.assertFalse(built.needs_retrieval)
+
+    def test_normalization_cannot_rescue_genuinely_invalid_decisions(self):
+        with self.assertRaisesRegex(ValidationError, "require a question"):
+            coerce_decision(draft(category="complaints", action=Action.CLARIFY,
+                                  needs_retrieval=False, clarification_question=None))
+        with self.assertRaisesRegex(ValidationError, "greetings and capability"):
+            coerce_decision(draft(category=Category.PAYMENTS, action=Action.RESPOND,
+                                  needs_retrieval=False))
 
 
 if __name__ == "__main__":
