@@ -17,10 +17,9 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
 
-    # The suite is deterministic and offline: no API key, no network, no index.
-    env:
-      SECURESUPPORT_TRACE_LOG_ENABLED: "false"
-
+    # The suite is deterministic and offline: no API key, no network, no index. It is
+    # also sensitive to ambient SECURESUPPORT_* variables (Settings reads the process
+    # environment even with _env_file=None), so none are set here.
     steps:
       - uses: actions/checkout@v4
 
