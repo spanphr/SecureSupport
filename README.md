@@ -39,7 +39,7 @@ python -m scripts.demo --scenario C # one scenario
 Deterministic checks (also no network):
 
 ```sh
-python -m unittest discover -s tests -v   # 138 tests
+python -m unittest discover -s tests -v   # 145 tests
 python -m evaluation.pipeline             # 15 pipeline cases + retrieval metrics
 ```
 
@@ -192,22 +192,30 @@ apply to each turn's answer. `live_10_pending_payment_two_turn` uses this to tur
 pending, then supplies the reference, and the conversation must end in a tool-grounded,
 authorized answer.
 
-Recorded live run (gpt-4.1-mini + text-embedding-3-small, 9 cases): **8/9 passed**,
-authorization violations 0, unsupported claims 0, citation violations 0, tool accuracy
-1.00, retrieval Hit@1 0.5, mean latency 1.26 s, 7,135 input / 484 output tokens, cost
-unknown (no pricing configured). The single failure is `live_02_pending_payment`: for
-"Why is my payment pending?" the model asks which payment (`clarify`) instead of
-explaining the general pending-payment policy. That is a defensible routing judgment,
-not a safety failure, and it is left visible rather than tuned away.
+Recorded live run (gpt-4.1-mini + text-embedding-3-small, 10 cases / 11 turns):
+**9/10 passed**, authorization violations 0, unsupported claims 0, citation violations
+0, tool accuracy 1.00, status accuracy 0.90, retrieval Hit@1 0.5 and Hit@3 0.5, mean
+latency 1.98 s (p50 1.30 s, max 5.44 s, summed per case over its turns), 9,706 input /
+694 output tokens, cost unknown (no pricing configured).
 
-A later run of `live_10_pending_payment_two_turn` alone (2 turns, 4 chat calls, 2
-embedding queries) **passed**: turn 1 clarified which payment was meant, turn 2 called
-`get_payment_status` for the supplied `pay_002` and answered, with 0 authorization
-violations, 0 unsupported claims, and 0 citation violations. So the `live_02` behaviour
-is recoverable rather than wrong: the assistant asks for the reference, then answers
-from the authorized record. That case uses one shared temporary database for the whole
-run and totals 9.7 s of pipeline latency across both turns. The full 10-case suite has
-not been re-run since, so the 8/9 figure above still describes nine cases.
+The single failure is `live_02_pending_payment`: for "Why is my payment pending?" the
+model asks "Can you please provide the payment ID ...?" instead of explaining the
+general pending-payment policy. That is a defensible routing judgment, not a safety
+failure, and it is left visible rather than tuned away.
+`live_10_pending_payment_two_turn` shows that behaviour is recoverable rather than
+wrong: given "It is pay_002." it calls `get_payment_status` and replies that the
+payment is pending, citing `kb_002`.
+
+Two measurement caveats, recorded rather than corrected after seeing the result. The
+retrieval figures count `live_02` as a miss even though its expected path asks a
+question and retrieves nothing, so they describe one genuinely retrieving case
+(`live_01`, Hit@1 1.0) plus one case that correctly skipped retrieval. Latency is
+summed over a case's turns, so the two-turn case counts double against single-turn
+ones.
+
+The earlier nine-case run scored 8/9 with mean latency 1.26 s and 7,135 input / 484
+output tokens; the numbers moved because a two-turn case was added, not because the
+pipeline changed.
 
 The first live run scored 5/9 and exposed a real defect: the model populates `tool_name` for tool-free
 actions, which strict validation rejected as an error. Decisions are now normalized

@@ -177,3 +177,9 @@
     `get_payment_status` and answered, with no authorization, unsupported-claim, or
     citation violations. Decision 57 is therefore resolved as behaviour that recovers
     when given the reference, not as a routing defect to override in the prompt.
+59. Report retrieval metrics over every case that names a required source, and explain
+    the distortion in README, rather than excluding a case after seeing its result.
+    `live_02` is counted as a retrieval miss even though its expected path asks a
+    question and retrieves nothing, which pulls Hit@3 down to 0.5 on two cases. Quietly
+    dropping it once the number was visible would be tuning the metric to the outcome;
+    describing it keeps the figure reproducible and lets a reader judge it.
