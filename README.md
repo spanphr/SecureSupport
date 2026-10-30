@@ -1,5 +1,8 @@
 # SecureSupport
 
+[![CI](https://github.com/spanphr/SecureSupport/actions/workflows/ci.yml/badge.svg)](https://github.com/spanphr/SecureSupport/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab.svg)](https://www.python.org/)
+
 ## A Guardrailed Agentic Customer Support System
 
 One reliable support agent: it retrieves approved policy, looks up the authenticated
@@ -7,13 +10,35 @@ customer's own records through deterministic tools, refuses or escalates anythin
 cannot do safely, and traces every request. Python 3.11+.
 
 Phase 1 is complete: a single orchestrating agent, end-to-end guardrails, structured
-human escalation, per-request observability, and an offline evaluation harness. There
-is no HTTP API, UI, multi-agent graph, or real customer system yet. See
+human escalation, per-request observability, an offline evaluation harness, and a
+browser demo that exposes the pipeline without changing it. There is no multi-agent
+graph, no durable conversation store, and no real customer system. See
 [`docs/SYSTEM_DESIGN.md`](docs/SYSTEM_DESIGN.md) for the full design and
 [`DECISIONS.md`](DECISIONS.md) for the reasoning.
 
 > The fictional policies in `data/synthetic_support.json` are demo content, not
 > production commitments. Nothing here connects to real accounts or payments.
+
+---
+
+## See it running
+
+**An answer, with the evidence that produced it.** The customer asks why a payment is
+pending; the agent retrieves `kb_002`, calls `get_payment_status` for a record they
+own, and the side panel shows the citation, the tool outcome, and the trace.
+
+![Payment question answered from policy and an authorized record](docs/screenshots/payment-answer.png)
+
+**A refusal no retrieval ranking can unlock.** The request is refused during input
+validation, before retrieval or any model call, so a well-ranked article about payments
+cannot turn it into an answer.
+
+![Cross-customer request refused with zero tool calls](docs/screenshots/refusal.png)
+
+**An escalation with a real ticket id.** The response returns `tkt_…`, the id of a row
+the pipeline actually wrote, and the handoff carries the reason and detected issue.
+
+![Human handoff creating a persisted support ticket](docs/screenshots/escalation.png)
 
 ---
 
@@ -32,14 +57,19 @@ python -m scripts.init_db     # creates/seeds data/support.sqlite3
 Offline demonstration (no API key, no network, no cost):
 
 ```sh
-python -m scripts.demo              # scenarios A-D
+python -m scripts.demo              # scenarios A-D in the terminal
 python -m scripts.demo --scenario C # one scenario
+python -m scripts.serve             # the same scenarios in a browser, port 8000
 ```
+
+`scripts.serve` defaults to **scripted mode**: canned model replies, real retrieval,
+real tools, real guardrails, real escalation tickets, disposable database. `--live`
+points the same UI at the configured model.
 
 Deterministic checks (also no network):
 
 ```sh
-python -m unittest discover -s tests -v   # 145 tests
+python -m unittest discover -s tests -v   # 162 tests
 python -m evaluation.pipeline             # 15 pipeline cases + retrieval metrics
 ```
 
@@ -49,6 +79,7 @@ your key**:
 ```sh
 python -m scripts.index_knowledge
 python -m scripts.demo --live
+python -m scripts.serve --live
 python -m scripts.chat --user usr_002 "Why is my payment pending?"
 ```
 
@@ -82,6 +113,25 @@ validate → decide → retrieve and/or authorized tool → compose → output g
 
 The path is a bounded LangGraph workflow, not an autonomous agent: no cycles, no
 planner, at most one tool execution and two model calls per request.
+
+---
+
+## Browser demo
+
+`python -m scripts.serve` starts FastAPI on `http://127.0.0.1:8000` and serves a single
+static page ([`frontend/index.html`](frontend/index.html)) over the same
+`SupportPipeline` the CLI calls. The transport is an adapter, not a second brain:
+
+| Concern | Where it lives |
+|---|---|
+| Identity | A cookie signed with a per-process HMAC secret ([`app/api/identity.py`](app/api/identity.py)). A `customer_id` in the request body is ignored, so the browser cannot assert who it is. |
+| Conversation history | Server-side per customer and bounded by `max_history_turns`, because browser-supplied history could contain forged agent turns. |
+| Policy, tools, guardrails | Unchanged `app.agent` code; the transport can only call `SupportPipeline.run`. |
+| Trace | Each response is returned with its own trace: retrieval ranks, tool codes, latencies, tokens, configured-price cost, flags, errors. |
+
+The demo cookie is **not authentication** - any visitor can pick any synthetic customer.
+It exists to show that identity is resolved server-side, which is the property a real
+session provider would supply. `/api/docs` serves the generated OpenAPI schema.
 
 ---
 
@@ -161,7 +211,7 @@ Recorded baseline with this commit:
 
 | Metric | Value |
 |---|---|
-| Deterministic tests | 138 passing |
+| Deterministic tests | 162 passing |
 | Pipeline cases | 15/15 |
 | Authorization violations | 0 |
 | Unsupported claims | 0 |
@@ -248,6 +298,7 @@ is optional and stored as `SecretStr`; tests and demos need no key.
 ## Folder structure
 
 - `app/agent/` — pipeline facade, LangGraph wiring, nodes, model adapter, factory.
+- `app/api/` — FastAPI transport, signed demo identity, scripted demo mode.
 - `app/guardrails/` — input validation, tool authorization, output validation.
 - `app/tools/` — deterministic tools and the allowlisted registry.
 - `app/schemas/` — decision, pipeline, domain, retrieval, and tool contracts.
@@ -256,9 +307,11 @@ is optional and stored as `SecretStr`; tests and demos need no key.
 - `app/observability.py` — trace assembly, structured logging, cost estimation.
 - `data/` — synthetic fixtures; generated database and index are git-ignored.
 - `docs/SYSTEM_DESIGN.md` — architecture, trust boundaries, failure modes.
+- `docs/screenshots/` — captured demo states used in this README.
 - `evaluation/` — labeled retrieval set, offline retriever, scripted model, offline pipeline harness.
-- `scripts/` — demo, chat, database init, indexing, fixture validation.
-- `tests/` — deterministic unit and end-to-end tests.
+- `frontend/` — the single-page demo UI; no build step, no dependencies.
+- `scripts/` — demo, chat, browser server, database init, indexing, fixture validation.
+- `tests/` — deterministic unit, end-to-end, and transport tests.
 
 ---
 
@@ -283,17 +336,22 @@ the same error.
 
 ## Known limitations
 
-- `SessionContext.customer_id` is a demo identity contract, not authentication.
-- No durable conversation state: the caller passes bounded history each turn.
+- `SessionContext.customer_id` is a demo identity contract, not authentication; the
+  browser demo's signed cookie proves integrity, not who is asking.
+- No durable conversation state: the CLI passes bounded history each turn, and the
+  browser demo keeps it in memory, so a restart begins a new conversation.
 - One clarification round is supported; there is no resumable approval workflow.
 - Relevance cutoffs are uncalibrated and disabled by default.
 - Output claim detection is regex-based, so recall is finite.
 - Escalation writes a ticket without a separate confirmation turn (documented).
 - Single agent by design; multi-agent decomposition is a Phase 2 question.
+- The browser demo's scripted mode answers its four preset questions only; anything
+  else is refused rather than answered by a canned reply.
 - Live evaluation results depend on the model version and are reported, not asserted;
   only the offline suite is a gate.
 
 ## Next
 
-Authenticated sessions, an HTTP transport, durable checkpointing with a human
-approval queue for refunds and account changes, and calibrated relevance thresholds.
+Authenticated sessions replacing the demo cookie, durable checkpointing with a human
+approval queue for refunds and account changes, calibrated relevance thresholds, and a
+deployed demo that keeps the paid model behind a rate limit.

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecureSupport — guardrailed support agent</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #151b23; --line: #232c38; --text: #e6edf3;
+    --muted: #8b949e; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); height: 100vh;
+    font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 14px 22px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark {
+    width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+    background: #1f6feb22; border: 1px solid #1f6feb66; color: var(--accent);
+    font-weight: 700; font-size: 12px; letter-spacing: .04em;
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .01em; }
+  .brand p { margin: 1px 0 0; font-size: 12px; color: var(--muted); }
+  .controls { display: flex; align-items: center; gap: 10px; }
+  .badge {
+    font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 8px;
+    border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge.scripted { color: var(--warn); border-color: #d2992255; background: #d2992214; }
+  .badge.live { color: var(--ok); border-color: #3fb95055; background: #3fb95014; }
+  select, button, input[type="text"] {
+    font: inherit; color: var(--text); background: #10151c;
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: #38506e; }
+  button:disabled { opacity: .45; cursor: progress; }
+  .notice {
+    padding: 9px 22px; font-size: 12px; color: var(--muted);
+    background: #10151c; border-bottom: 1px solid var(--line);
+  }
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+  .chat { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .log { flex: 1; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .turn { max-width: 78%; border-radius: 12px; padding: 11px 14px; white-space: pre-wrap; }
+  .turn.customer { align-self: flex-end; background: #1b3a5c; border: 1px solid #24486e; }
+  .turn.agent { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); }
+  .turn .meta {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px;
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+  }
+  .turn .meta span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+  .turn .meta .status-answered, .turn .meta .status-action_completed { color: var(--ok); border-color: #3fb95044; }
+  .turn .meta .status-refused, .turn .meta .status-unverified_action,
+  .turn .meta .status-error { color: var(--bad); border-color: #f8514944; }
+  .turn .meta .status-escalated, .turn .meta .status-clarification_required,
+  .turn .meta .status-insufficient_context { color: var(--warn); border-color: #d2992244; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 22px 10px; }
+  .examples button {
+    font-size: 12px; color: var(--muted); background: #10151c; border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .examples button:hover { color: var(--text); }
+  .composer { display: flex; gap: 10px; align-items: center; padding: 0 22px 20px; }
+  .composer input[type="text"] { flex: 1; }
+  .composer label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .panel { overflow-y: auto; padding: 22px; background: #10151c; }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 14px; }
+  .empty { color: #566171; font-size: 12.5px; }
+  .group { margin-bottom: 18px; }
+  .group h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: #6e7d90; margin: 0 0 7px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 3px 0; }
+  .row .k { color: var(--muted); }
+  .row .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .item {
+    font-size: 12.5px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 9px; margin-bottom: 6px; background: #0f141b;
+  }
+  .item .id { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11.5px; }
+  .code-ok { color: var(--ok); } .code-bad { color: var(--bad); } .code-warn { color: var(--warn); }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; border: 1px solid var(--line); }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    .panel { border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="mark">SS</span>
+    <div>
+      <h1>SecureSupport</h1>
+      <p>Guardrailed agentic support &middot; retrieval, authorized tools, escalation</p>
+    </div>
+  </div>
+  <div class="controls">
+    <span id="mode-badge" class="badge">loading</span>
+    <select id="customer" aria-label="Demo customer"></select>
+    <button id="reset" type="button">Reset</button>
+  </div>
+</header>
+
+<div id="notice" class="notice"></div>
+
+<main>
+  <section class="chat">
+    <div id="log" class="log"></div>
+    <div id="examples" class="examples"></div>
+    <form id="composer" class="composer">
+      <input id="message" type="text" placeholder="Ask about a payment, refund, account, or policy&hellip;"
+             maxlength="4000" autocomplete="off" required>
+      <label title="Required before any state-changing tool runs">
+        <input id="confirm" type="checkbox"> Confirm write
+      </label>
+      <button id="send" type="submit">Send</button>
+    </form>
+  </section>
+
+  <aside class="panel">
+    <h2>Evidence &amp; trace</h2>
+    <div id="panel-empty" class="empty">
+      Each answer shows what it was grounded in, which tools ran, and what the trace recorded.
+    </div>
+    <div id="panel-body" hidden></div>
+  </aside>
+</main>
+
+<script>
+// All rendered values go through textContent: model output and retrieved policy text
+// are untrusted and must never be parsed as HTML.
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+const state = { mode: "scripted", me: null };
+const log = document.getElementById("log");
+const panelBody = document.getElementById("panel-body");
+const panelEmpty = document.getElementById("panel-empty");
+const sendButton = document.getElementById("send");
+
+async function api(path, body, method) {
+  const options = body === undefined && !method ? {} : {
+    method: method || "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  };
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `${res.status} ${res.statusText}`);
+  return data;
+}
+
+function addTurn(role, text, raw) {
+  const turn = el("div", `turn ${role}`);
+  if (raw) {
+    const meta = el("div", "meta");
+    meta.append(el("span", `status-${raw.status}`, raw.status));
+    if (raw.category) meta.append(el("span", null, `${raw.category} / ${raw.action}`));
+    if (raw.action_performed) meta.append(el("span", "status-action_completed", "action performed"));
+    if (raw.escalation_ticket_id) meta.append(el("span", "status-escalated", raw.escalation_ticket_id));
+    turn.append(meta);
+  }
+  turn.append(document.createTextNode(text));
+  log.append(turn);
+  log.scrollTop = log.scrollHeight;
+}
+
+function row(parent, key, value, className) {
+  const line = el("div", "row");
+  line.append(el("span", "k", key));
+  line.append(el("span", `v${className ? " " + className : ""}`, String(value)));
+  parent.append(line);
+}
+
+function group(parent, title) {
+  const box = el("div", "group");
+  box.append(el("h3", null, title));
+  parent.append(box);
+  return box;
+}
+
+function renderPanel(data) {
+  const { response, trace } = data;
+  panelBody.replaceChildren();
+  panelEmpty.hidden = true;
+  panelBody.hidden = false;
+
+  const decision = group(panelBody, "Decision");
+  row(decision, "status", response.status);
+  row(decision, "category", response.category || "—");
+  row(decision, "action", response.action || "—");
+  row(decision, "action performed", response.action_performed ? "yes" : "no");
+
+  if (response.escalation) {
+    const escalation = group(panelBody, "Escalation");
+    row(escalation, "reason", response.escalation.reason);
+    row(escalation, "issue", response.escalation.detected_issue);
+    row(escalation, "handoff ticket", response.escalation_ticket_id || "not created");
+  }
+
+  const citations = group(panelBody, "Sources");
+  if (!response.source_ids.length) {
+    citations.append(el("div", "empty", "none cited"));
+  } else {
+    const ranked = (trace && trace.retrieval_hit) || [];
+    const byId = new Map(ranked.map((hit) => [hit.article_id, hit]));
+    response.source_ids.forEach((id) => {
+      const hit = byId.get(id);
+      const item = el("div", "item");
+      item.append(el("span", "id", id));
+      item.append(document.createTextNode(hit ? ` · rank ${hit.rank} · ${hit.distance.toFixed(3)}` : ""));
+      if (hit) item.append(el("div", null, hit.title));
+      citations.append(item);
+    });
+  }
+
+  const tools = group(panelBody, "Tools");
+  if (!response.tool_calls.length) {
+    tools.append(el("div", "empty", "none executed"));
+  } else {
+    response.tool_calls.forEach((call) => {
+      const item = el("div", "item");
+      item.append(el("span", "id", call.tool_name));
+      const ok = call.outcome.code === "ok";
+      item.append(el("span", ok ? "code-ok" : "code-warn", ` · ${call.outcome.code}`));
+      item.append(el("div", null, call.outcome.message));
+      tools.append(item);
+    });
+  }
+
+  if (trace) {
+    const timing = group(panelBody, "Trace");
+    row(timing, "trace id", trace.trace_id.slice(0, 12));
+    row(timing, "total", `${trace.total_latency_ms.toFixed(1)} ms`);
+    row(timing, "retrieval", trace.retrieval_latency_ms === null ? "—" : `${trace.retrieval_latency_ms.toFixed(1)} ms`);
+    row(timing, "llm", trace.llm_latency_ms === null ? "—" : `${trace.llm_latency_ms.toFixed(1)} ms`);
+    row(timing, "llm calls", trace.llm_calls);
+    row(timing, "tokens", `${trace.input_tokens} in / ${trace.output_tokens} out`);
+    row(timing, "cost", trace.estimated_cost_usd === null ? "unpriced" : `$${trace.estimated_cost_usd}`);
+    if (trace.flags.length) row(timing, "flags", trace.flags.join(", "), "code-warn");
+    if (trace.errors.length) row(timing, "errors", trace.errors.join(", "), "code-bad");
+  }
+}
+
+async function startSession(customerId) {
+  await api("/api/session", { customer_id: customerId });
+  state.me = customerId;
+  log.replaceChildren();
+  panelBody.replaceChildren();
+  panelBody.hidden = true;
+  panelEmpty.hidden = false;
+}
+
+async function send(message) {
+  sendButton.disabled = true;
+  addTurn("customer", message);
+  try {
+    const data = await api("/api/chat", {
+      message,
+      confirm_write: document.getElementById("confirm").checked,
+    });
+    addTurn("agent", data.response.answer, data.response);
+    renderPanel(data);
+  } catch (error) {
+    addTurn("agent", error.message, { status: "error", category: null, action: null });
+  } finally {
+    sendButton.disabled = false;
+  }
+}
+
+async function boot() {
+  const data = await api("/api/bootstrap");
+  state.mode = data.mode;
+
+  const badge = document.getElementById("mode-badge");
+  badge.textContent = data.mode === "live" ? "live model" : "scripted demo";
+  badge.className = `badge ${data.mode}`;
+
+  document.getElementById("notice").textContent = data.mode === "live"
+    ? "Live mode: answers come from the configured model and retrieval index. Identity is a demo cookie, not authentication."
+    : "Scripted demo: canned model replies, real guardrails, tools, and escalation. Tickets are written to a disposable database. Restart with --live for the real model.";
+
+  const select = document.getElementById("customer");
+  data.roster.forEach((user) => {
+    const option = el("option", null, `${user.name} (${user.id})`);
+    option.value = user.id;
+    select.append(option);
+  });
+  const preferred = (data.examples[0] || {}).customer_id;
+  if (preferred && data.roster.some((u) => u.id === preferred)) select.value = preferred;
+  await startSession(select.value);
+
+  const examples = document.getElementById("examples");
+  data.examples.forEach((example) => {
+    const button = el("button", null, example.message);
+    button.type = "button";
+    button.title = example.title;
+    button.addEventListener("click", () => {
+      document.getElementById("message").value = example.message;
+      document.getElementById("message").focus();
+    });
+    examples.append(button);
+  });
+}
+
+document.getElementById("composer").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.getElementById("message");
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  send(message);
+});
+
+document.getElementById("customer").addEventListener("change", (event) => {
+  startSession(event.target.value).catch((error) => addTurn("agent", error.message, { status: "error" }));
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  api("/api/reset", {}, "POST").then(() => {
+    log.replaceChildren();
+    panelBody.replaceChildren();
+    panelBody.hidden = true;
+    panelEmpty.hidden = false;
+  });
+});
+
+boot().catch((error) => {
+  document.getElementById("notice").textContent = `Could not start the demo: ${error.message}`;
+  sendButton.disabled = true;
+});
+</script>
+</body>
+</html>

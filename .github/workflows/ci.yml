@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    # The suite is deterministic and offline: no API key, no network, no index.
+    env:
+      SECURESUPPORT_TRACE_LOG_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Validate synthetic fixtures
+        run: python -m scripts.validate_data
+
+      - name: Deterministic tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Offline pipeline evaluation
+        run: python -m evaluation.pipeline

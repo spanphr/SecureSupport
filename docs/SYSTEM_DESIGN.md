@@ -26,7 +26,7 @@ itself so the current system stays small and reviewable.
 
 - Multi-agent collaboration, planners, or autonomous loops.
 - Real payments, refunds, or customer data.
-- Authentication/identity provider, HTTP API, UI, queues, or horizontal scale.
+- An authentication/identity provider, queues, or horizontal scale.
 - Learned relevance thresholds, fine-tuning, or an LLM-as-judge evaluation.
 
 ---
@@ -58,7 +58,7 @@ Dependencies point inward: transports depend on the pipeline, the pipeline depen
 on contracts and guardrails, and only the tool registry touches storage.
 
 ```
-CLI (scripts/chat.py, scripts/demo.py)        future HTTP transport
+CLI (scripts/chat.py, scripts/demo.py)   HTTP + UI (app/api, frontend/)
                 │                                      │
                 └──────────────┬───────────────────────┘
                                ▼
@@ -303,8 +303,11 @@ output. They are not a claim about live model accuracy.
 
 Not built in Phase 1, in rough order of value:
 
-1. Verified authentication to replace the `SessionContext` demo contract.
-2. HTTP API and a streaming transport over the same pipeline.
+1. Verified authentication to replace the `SessionContext` demo contract; the HTTP
+   transport already resolves identity server-side from a signed cookie, so only the
+   issuer changes.
+2. A streaming transport (server-sent events) over the same pipeline, and a deployed
+   demo that rate-limits the paid model.
 3. LangGraph checkpointing for durable multi-turn state and resumable approvals.
 4. A human approval queue for refunds and account changes (the missing write path).
 5. Calibrated relevance thresholds derived from live retrieval data.

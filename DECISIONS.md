@@ -183,3 +183,32 @@
     question and retrieves nothing, which pulls Hit@3 down to 0.5 on two cases. Quietly
     dropping it once the number was visible would be tuning the metric to the outcome;
     describing it keeps the figure reproducible and lets a reader judge it.
+60. Add an HTTP transport and browser demo now, reversing the earlier "no FastAPI yet"
+    constraint. That constraint was about avoiding complexity ahead of a working
+    pipeline, not about the framework: the pipeline is stable, tested end to end, and
+    evaluated, and the one thing a reader could not do was see it. The transport is an
+    adapter - `app/api/main.py` can only call `SupportPipeline.run` - so it adds a
+    delivery surface without adding a second place where policy could live.
+61. Resolve demo identity from a signed cookie, never from the request body. The three
+    demo customers are fictional, so this looks like ceremony; it is not. Accepting a
+    `customer_id` from the browser would have modelled exactly the failure the system
+    exists to prevent, and the seam is where a real session provider would attach. The
+    HMAC key is generated per process, so a restart ends sessions, and any visitor can
+    still pick any synthetic customer: integrity is proven, authentication is not, and
+    both README and system design say so.
+62. Keep conversation history server-side and in memory. Posting history from the
+    browser would let it inject fabricated agent turns into the composition prompt.
+    History is bounded by `max_history_turns` and keyed by the signed identity; a
+    restart begins a new conversation, which is recorded as a limitation rather than
+    hidden behind a store that would imply durability this project does not have.
+63. Default the browser demo to scripted mode and make `--live` an explicit opt-in.
+    Anyone who clones the repository can then see real retrieval, real tools, real
+    guardrails, and real escalation tickets with no key and no cost, while the same
+    command with `--live` uses the configured model. Unknown messages are refused with
+    a pointer to the preset questions instead of being answered by a canned reply,
+    because a scripted model has no opinion about anything else.
+64. Treat the demo's method contracts as testable, after the Reset button was found
+    silently doing nothing: the UI called `GET /api/reset`, the route was POST-only, and
+    the failure surfaced as an unhandled rejection rather than an error. A transport bug
+    that looks like a no-op is worse than a crash, so `tests/test_api.py` now pins the
+    method, along with identity tampering, body-supplied identity, and trace privacy.
