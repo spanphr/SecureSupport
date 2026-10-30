@@ -173,3 +173,7 @@
     requirement is that the conversation recovers, not that the model shares my
     preference about asking first. Encoding the model's current wording as the expected
     behaviour would only prove the model agrees with itself.
+    Executed live: turn 1 returned `clarification_required`, turn 2 called
+    `get_payment_status` and answered, with no authorization, unsupported-claim, or
+    citation violations. Decision 57 is therefore resolved as behaviour that recovers
+    when given the reference, not as a routing defect to override in the prompt.

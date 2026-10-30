@@ -195,12 +195,21 @@ authorized answer.
 Recorded live run (gpt-4.1-mini + text-embedding-3-small, 9 cases): **8/9 passed**,
 authorization violations 0, unsupported claims 0, citation violations 0, tool accuracy
 1.00, retrieval Hit@1 0.5, mean latency 1.26 s, 7,135 input / 484 output tokens, cost
-unknown (no pricing configured). That run predates the two-turn case, which has not
-been executed yet. The single failure is `live_02_pending_payment`: for
+unknown (no pricing configured). The single failure is `live_02_pending_payment`: for
 "Why is my payment pending?" the model asks which payment (`clarify`) instead of
 explaining the general pending-payment policy. That is a defensible routing judgment,
-not a safety failure, and it is left visible rather than tuned away. The first live run
-scored 5/9 and exposed a real defect: the model populates `tool_name` for tool-free
+not a safety failure, and it is left visible rather than tuned away.
+
+A later run of `live_10_pending_payment_two_turn` alone (2 turns, 4 chat calls, 2
+embedding queries) **passed**: turn 1 clarified which payment was meant, turn 2 called
+`get_payment_status` for the supplied `pay_002` and answered, with 0 authorization
+violations, 0 unsupported claims, and 0 citation violations. So the `live_02` behaviour
+is recoverable rather than wrong: the assistant asks for the reference, then answers
+from the authorized record. That case uses one shared temporary database for the whole
+run and totals 9.7 s of pipeline latency across both turns. The full 10-case suite has
+not been re-run since, so the 8/9 figure above still describes nine cases.
+
+The first live run scored 5/9 and exposed a real defect: the model populates `tool_name` for tool-free
 actions, which strict validation rejected as an error. Decisions are now normalized
 deterministically before validation, so redundant model fields cannot fail or widen a
 decision.
