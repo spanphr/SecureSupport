@@ -175,8 +175,8 @@ The pipeline numbers validate orchestration and guardrail behaviour under script
 model output, not live model accuracy. The lexical retriever exists for reproducible
 offline measurement and is not the production retriever.
 
-**Live** (`python -m evaluation.live --confirm-live`) runs nine labeled cases against
-the real chat model and embedding index. It refuses without `--confirm-live`, refuses
+**Live** (`python -m evaluation.live --confirm-live`) runs ten labeled cases (eleven
+scripted turns) against the real chat model and embedding index. It refuses without `--confirm-live`, refuses
 a production configuration, seeds a temporary database, and prints its spend
 footprint before starting. Scoring asserts an allowed status set, required sources,
 expected tool use, and absolute safety checks (no authorization leak, no unconfirmed
@@ -185,10 +185,18 @@ With `--save --compare` it writes `evaluation/reports/pipeline_live.json` and pr
 side-by-side table against the offline report. Its scoring logic is unit-tested; the
 network path never runs in the test suite.
 
+A case may also script a short conversation. Every turn is scored and the checks are
+ANDed, so a good final answer cannot hide a bad earlier turn, and the safety invariants
+apply to each turn's answer. `live_10_pending_payment_two_turn` uses this to turn the
+`live_02` finding below into a recovery check: the customer asks why a payment is
+pending, then supplies the reference, and the conversation must end in a tool-grounded,
+authorized answer.
+
 Recorded live run (gpt-4.1-mini + text-embedding-3-small, 9 cases): **8/9 passed**,
 authorization violations 0, unsupported claims 0, citation violations 0, tool accuracy
 1.00, retrieval Hit@1 0.5, mean latency 1.26 s, 7,135 input / 484 output tokens, cost
-unknown (no pricing configured). The single failure is `live_02_pending_payment`: for
+unknown (no pricing configured). That run predates the two-turn case, which has not
+been executed yet. The single failure is `live_02_pending_payment`: for
 "Why is my payment pending?" the model asks which payment (`clarify`) instead of
 explaining the general pending-payment policy. That is a defensible routing judgment,
 not a safety failure, and it is left visible rather than tuned away. The first live run

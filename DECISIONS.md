@@ -163,3 +163,13 @@
     a two-turn live case (clarify, then look up the supplied reference) or an explicit
     routing preference in the prompt. Editing the expectation to accept the current
     behaviour would hide the ambiguity instead of resolving it.
+58. Resolve decision 57 as a second live case rather than a rewritten one. The harness
+    now runs scripted multi-turn conversations: each turn carries its own allowed
+    statuses and expected tool, checks are ANDed, safety invariants apply per turn, and
+    latency/tokens/cost are summed over the conversation. `live_02` stays unchanged as
+    the recorded finding, and `live_10_pending_payment_two_turn` asks the same question
+    then supplies `pay_002`, requiring a tool-grounded answer on turn two. Its first
+    turn allows both `clarification_required` and `answered`, because the product
+    requirement is that the conversation recovers, not that the model shares my
+    preference about asking first. Encoding the model's current wording as the expected
+    behaviour would only prove the model agrees with itself.

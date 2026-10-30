@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.agent.model import OpenAISupportModel
 from app.agent.pipeline import SupportPipeline
@@ -24,7 +24,12 @@ from app.config import Settings
 from app.guardrails.output import claims_completed_action
 from app.observability import MemoryTraceSink, TraceRecord
 from app.schemas.domain import Dataset, Record
-from app.schemas.pipeline import PipelineRequest, PipelineResponse, SessionContext
+from app.schemas.pipeline import (
+    ConversationTurn,
+    PipelineRequest,
+    PipelineResponse,
+    SessionContext,
+)
 from app.storage.database import Database
 from app.storage.repository import SupportRepository
 from app.storage.seed import seed_database
@@ -38,15 +43,51 @@ OFFLINE_REPORT = REPORTS_DIR / "pipeline_offline.json"
 LIVE_REPORT = REPORTS_DIR / "pipeline_live.json"
 
 
-class LiveCase(Record):
-    id: str
-    scenario: str
-    customer_id: str
+class LiveTurn(Record):
+    """One customer message in a scripted conversation."""
+
     message: str = Field(min_length=1, max_length=4000)
     allowed_statuses: list[str] = Field(min_length=1)
     required_source: list[str] = Field(default_factory=list)
     expected_tool: str | None = None
+
+
+class LiveCase(Record):
+    """A labeled case, either one message or a short scripted conversation.
+
+    Single-turn cases use the `message`/`allowed_statuses` shorthand; multi-turn cases
+    list `turns`. A case passes only when every turn passes, so a conversation cannot
+    hide a bad turn behind a good final answer.
+    """
+
+    id: str
+    scenario: str
+    customer_id: str
+    message: str | None = Field(default=None, min_length=1, max_length=4000)
+    allowed_statuses: list[str] = Field(default_factory=list)
+    required_source: list[str] = Field(default_factory=list)
+    expected_tool: str | None = None
+    turns: list[LiveTurn] = Field(default_factory=list, max_length=4)
     must_not_contain: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_shape(self):
+        if self.turns and self.message is not None:
+            raise ValueError("Use either 'message' or 'turns', not both.")
+        if not self.turns and self.message is None:
+            raise ValueError("A live case needs a 'message' or a non-empty 'turns' list.")
+        if not self.turns and not self.allowed_statuses:
+            raise ValueError("A single-turn case needs 'allowed_statuses'.")
+        return self
+
+    @property
+    def scripted_turns(self) -> list[LiveTurn]:
+        if self.turns:
+            return list(self.turns)
+        return [LiveTurn(
+            message=self.message or "", allowed_statuses=self.allowed_statuses,
+            required_source=self.required_source, expected_tool=self.expected_tool,
+        )]
 
 
 def load_cases(path: Path = CASES_PATH) -> list[LiveCase]:
@@ -56,8 +97,8 @@ def load_cases(path: Path = CASES_PATH) -> list[LiveCase]:
     return cases
 
 
-def score_case(case: LiveCase, response: PipelineResponse, trace: TraceRecord,
-               dataset: Dataset) -> dict:
+def _score_turn(case: LiveCase, turn: LiveTurn, response: PipelineResponse,
+                trace: TraceRecord, dataset: Dataset) -> dict:
     foreign = foreign_record_ids(dataset, case.customer_id)
     retrieved = [item.article_id for item in trace.retrieval_hit]
     leaked_payload = any(
@@ -74,10 +115,10 @@ def score_case(case: LiveCase, response: PipelineResponse, trace: TraceRecord,
     tools = [call.tool_name for call in response.tool_calls]
 
     checks = {
-        "status": response.status in case.allowed_statuses,
-        "sources": (not case.required_source)
-        or bool(set(case.required_source) & set(response.source_ids)),
-        "tool": case.expected_tool is None or case.expected_tool in tools,
+        "status": response.status in turn.allowed_statuses,
+        "sources": (not turn.required_source)
+        or bool(set(turn.required_source) & set(response.source_ids)),
+        "tool": turn.expected_tool is None or turn.expected_tool in tools,
         "no_unsupported_claim": not unsupported,
         "no_authorization_leak": not (leaked_payload or leaked_text),
         "no_forbidden_text": all(text not in response.answer for text in case.must_not_contain),
@@ -87,12 +128,12 @@ def score_case(case: LiveCase, response: PipelineResponse, trace: TraceRecord,
         "case_id": case.id,
         "scenario": case.scenario,
         "status": response.status,
-        "allowed_statuses": case.allowed_statuses,
+        "allowed_statuses": turn.allowed_statuses,
         "sources": response.source_ids,
         "retrieval_ids": retrieved,
-        "required_source": case.required_source,
+        "required_source": turn.required_source,
         "tools": tools,
-        "expects_tool": case.expected_tool is not None,
+        "expects_tool": turn.expected_tool is not None,
         "escalation_ticket_id": response.escalation_ticket_id,
         "latency_ms": response.total_latency_ms,
         "input_tokens": trace.input_tokens,
@@ -104,9 +145,62 @@ def score_case(case: LiveCase, response: PipelineResponse, trace: TraceRecord,
     }
 
 
+def score_case(case: LiveCase, response: PipelineResponse, trace: TraceRecord,
+               dataset: Dataset) -> dict:
+    """Score one single-turn case."""
+    return _score_turn(case, case.scripted_turns[0], response, trace, dataset)
+
+
+def _sum_cost(costs: list[float | None]) -> float | None:
+    return None if any(cost is None for cost in costs) else sum(costs)
+
+
+def score_conversation(case: LiveCase, results: list[tuple[PipelineResponse, TraceRecord]],
+                       dataset: Dataset) -> dict:
+    """Score every turn of a case. Checks are ANDed, so one bad turn fails the case.
+
+    Latency, tokens, and cost are summed over the conversation. Retrieval metrics use
+    the last turn that expected a source, because that is the turn meant to be grounded.
+    """
+    turns = case.scripted_turns
+    if len(results) != len(turns):
+        raise ValueError(
+            f"{case.id}: expected {len(turns)} turn result(s), got {len(results)}."
+        )
+    scored = [_score_turn(case, turn, response, trace, dataset)
+              for turn, (response, trace) in zip(turns, results)]
+    checks = {name: all(row["checks"][name] for row in scored)
+              for name in scored[-1]["checks"]}
+    final = scored[-1]
+    grounded = next((row for row in reversed(scored) if row["required_source"]), final)
+    return {
+        "case_id": case.id,
+        "scenario": case.scenario,
+        "status": final["status"],
+        "allowed_statuses": final["allowed_statuses"],
+        "sources": final["sources"],
+        "retrieval_ids": grounded["retrieval_ids"],
+        "required_source": grounded["required_source"],
+        "tools": final["tools"],
+        "expects_tool": any(row["expects_tool"] for row in scored),
+        "escalation_ticket_id": final["escalation_ticket_id"],
+        "latency_ms": sum(row["latency_ms"] for row in scored),
+        "input_tokens": sum(row["input_tokens"] for row in scored),
+        "output_tokens": sum(row["output_tokens"] for row in scored),
+        "estimated_cost_usd": _sum_cost([row["estimated_cost_usd"] for row in scored]),
+        "turn_count": len(scored),
+        "turns": [{"status": row["status"], "sources": row["sources"],
+                   "tools": row["tools"], "checks": row["checks"]} for row in scored],
+        "answer": final["answer"],
+        "checks": checks,
+        "passed": all(checks.values()),
+    }
+
+
 def run_cases(cases: list[LiveCase], dataset: Dataset,
-              run_one: Callable[[LiveCase], tuple[PipelineResponse, TraceRecord]]) -> list[dict]:
-    return [score_case(case, *run_one(case), dataset) for case in cases]
+              run_turns: Callable[
+                  [LiveCase], list[tuple[PipelineResponse, TraceRecord]]]) -> list[dict]:
+    return [score_conversation(case, run_turns(case), dataset) for case in cases]
 
 
 def _rate(rows: list[dict], key: str) -> float | None:
@@ -265,8 +359,10 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"LIVE EVALUATION: {len(cases)} case(s) against {settings.chat_model} "
           f"+ {settings.embedding_model}.")
-    print("Each case makes one decision call, up to one composition call, and one "
-          "embedding query. This spends real API credit.")
+    turn_count = sum(len(case.scripted_turns) for case in cases)
+    print(f"{turn_count} scripted turn(s) across {len(cases)} case(s): each turn makes one "
+          "decision call, up to one composition call, and one embedding query. "
+          "This spends real API credit.")
 
     with tempfile.TemporaryDirectory() as folder:
         database = Database(Path(folder) / "live.sqlite3")
@@ -274,14 +370,23 @@ def main(argv: list[str] | None = None) -> None:
         seed_database(database, dataset)
         pipeline, sink = build_live_pipeline(settings, database)
 
-        def run_one(case: LiveCase) -> tuple[PipelineResponse, TraceRecord]:
-            response = pipeline.run(
-                PipelineRequest(message=case.message),
-                SessionContext(customer_id=case.customer_id),
-            )
-            return response, sink.records[-1]
+        def run_turns(case: LiveCase) -> list[tuple[PipelineResponse, TraceRecord]]:
+            """Run the case's turns in order, carrying the real conversation history."""
+            history: list[ConversationTurn] = []
+            results: list[tuple[PipelineResponse, TraceRecord]] = []
+            for turn in case.scripted_turns:
+                response = pipeline.run(
+                    PipelineRequest(message=turn.message, history=list(history)),
+                    SessionContext(customer_id=case.customer_id),
+                )
+                results.append((response, sink.records[-1]))
+                history.extend([
+                    ConversationTurn(role="customer", content=turn.message),
+                    ConversationTurn(role="agent", content=response.answer),
+                ])
+            return results
 
-        rows = run_cases(cases, dataset, run_one)
+        rows = run_cases(cases, dataset, run_turns)
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -308,7 +413,12 @@ def main(argv: list[str] | None = None) -> None:
         marker = "PASS" if row["passed"] else "FAIL"
         failed = [name for name, ok in row["checks"].items() if not ok]
         detail = f" failed={failed}" if failed else ""
-        print(f"  [{marker}] {row['case_id']:<28} status={row['status']:<22}{detail}")
+        print(f"  [{marker}] {row['case_id']:<32} status={row['status']:<22}{detail}")
+        if row["turn_count"] > 1:
+            for index, turn in enumerate(row["turns"], 1):
+                bad = [name for name, ok in turn["checks"].items() if not ok]
+                print(f"           turn {index}: status={turn['status']}"
+                      f" tools={turn['tools']}" + (f" failed={bad}" if bad else ""))
 
     print(json.dumps({key: report[key] for key in (
         "cases", "passed", "pass_rate", "status_accuracy", "source_accuracy",

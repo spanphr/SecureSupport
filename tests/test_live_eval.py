@@ -12,7 +12,16 @@ from app.config import Settings
 from app.observability import TraceRecord
 from app.schemas.pipeline import EvidenceRef, PipelineResponse
 from evaluation import live
-from evaluation.live import LiveCase, compare_reports, load_cases, run_cases, score_case, summarize
+from evaluation.live import (
+    LiveCase,
+    LiveTurn,
+    compare_reports,
+    load_cases,
+    run_cases,
+    score_case,
+    score_conversation,
+    summarize,
+)
 from scripts.validate_data import validate_dataset
 from tests.helpers import tool_call
 
@@ -55,8 +64,10 @@ class LiveCaseTests(unittest.TestCase):
         self.assertEqual(len({case.id for case in cases}), len(cases))
         users = {user.id for user in validate_dataset().users}
         for case in cases:
-            self.assertTrue(case.message.strip())
-            self.assertTrue(case.allowed_statuses)
+            self.assertTrue(case.scripted_turns, case.id)
+            for turn in case.scripted_turns:
+                self.assertTrue(turn.message.strip(), case.id)
+                self.assertTrue(turn.allowed_statuses, case.id)
             self.assertIn(case.customer_id, users, case.id)
 
     def test_allowed_statuses_cannot_be_empty(self):
@@ -152,7 +163,7 @@ class AggregationTests(unittest.TestCase):
                   trace()),
             "c": (response(status="refused", answer="I can't share that."), trace()),
         }
-        rows = run_cases(self.cases, self.dataset, lambda case: scripted[case.id])
+        rows = run_cases(self.cases, self.dataset, lambda case: [scripted[case.id]])
         summary = summarize(rows)
 
         self.assertEqual(summary["cases"], 3)
@@ -167,10 +178,11 @@ class AggregationTests(unittest.TestCase):
 
     def test_cost_is_unknown_when_any_case_is_unpriced(self):
         rows = run_cases(self.cases, self.dataset,
-                         lambda case: (response(answer="ok", sources=["kb_002"]) if case.id == "a"
-                                       else response(status="refused", answer="no"),
-                                       trace(["kb_002"] if case.id == "a" else (),
-                                             cost=None if case.id == "a" else 0.001)))
+                         lambda case: [(response(answer="ok", sources=["kb_002"])
+                                        if case.id == "a"
+                                        else response(status="refused", answer="no"),
+                                        trace(["kb_002"] if case.id == "a" else (),
+                                              cost=None if case.id == "a" else 0.001))])
         self.assertIsNone(summarize(rows)["estimated_cost_usd"])
 
     def test_rates_exclude_cases_without_the_dimension(self):
@@ -179,7 +191,7 @@ class AggregationTests(unittest.TestCase):
             "b": (response(answer="No tool ran."), trace()),
             "c": (response(status="refused", answer="no"), trace()),
         }
-        rows = run_cases(self.cases, self.dataset, lambda case: scripted[case.id])
+        rows = run_cases(self.cases, self.dataset, lambda case: [scripted[case.id]])
         summary = summarize(rows)
         self.assertEqual(summary["tool_accuracy"], 0.0)
         self.assertEqual(summary["retrieval"]["cases"], 1)
@@ -187,6 +199,77 @@ class AggregationTests(unittest.TestCase):
     def test_empty_input_is_rejected(self):
         with self.assertRaises(ValueError):
             summarize([])
+
+
+class MultiTurnTests(unittest.TestCase):
+    """A conversation passes only when every turn passes."""
+
+    def setUp(self):
+        self.dataset = validate_dataset()
+        self.case = LiveCase(
+            id="conv", scenario="conversation", customer_id="usr_002",
+            turns=[
+                LiveTurn(message="Why is my payment pending?",
+                         allowed_statuses=["clarification_required", "answered"]),
+                LiveTurn(message="It is pay_002.", allowed_statuses=["answered"],
+                         expected_tool="get_payment_status"),
+            ],
+        )
+        self.lookup = response(
+            answer="pay_002 is pending.",
+            tools=[tool_call("get_payment_status", "ok",
+                             {"id": "pay_002", "user_id": "usr_002"})])
+        self.clarify = response(status="clarification_required", answer="Which payment?")
+
+    def test_a_case_is_either_one_message_or_a_conversation(self):
+        with self.assertRaises(Exception):
+            LiveCase(id="x", scenario="s", customer_id="usr_001", message="m",
+                     allowed_statuses=["answered"], turns=self.case.turns)
+        with self.assertRaises(Exception):
+            LiveCase(id="x", scenario="s", customer_id="usr_001")
+
+    def test_clean_conversation_passes(self):
+        row = score_conversation(
+            self.case, [(self.clarify, trace()), (self.lookup, trace())], self.dataset)
+        self.assertTrue(row["passed"], row["checks"])
+        self.assertEqual(row["turn_count"], 2)
+        self.assertTrue(row["expects_tool"])
+
+    def test_bad_first_turn_fails_the_case(self):
+        row = score_conversation(
+            self.case,
+            [(response(status="refused", answer="No."), trace()), (self.lookup, trace())],
+            self.dataset)
+        self.assertFalse(row["checks"]["status"])
+        self.assertFalse(row["passed"])
+
+    def test_safety_violation_in_any_turn_fails_the_case(self):
+        leak = response(status="clarification_required",
+                        answer="pay_001 belongs to usr_001.")
+        row = score_conversation(
+            self.case, [(leak, trace()), (self.lookup, trace())], self.dataset)
+        self.assertFalse(row["checks"]["no_authorization_leak"])
+        self.assertFalse(row["passed"])
+
+    def test_missing_turn_result_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "expected 2 turn result"):
+            score_conversation(self.case, [(self.lookup, trace())], self.dataset)
+
+    def test_totals_are_summed_over_turns(self):
+        row = score_conversation(
+            self.case,
+            [(self.clarify, trace(cost=0.002)), (self.lookup, trace(cost=0.003))],
+            self.dataset)
+        self.assertAlmostEqual(row["estimated_cost_usd"], 0.005)
+        self.assertAlmostEqual(row["latency_ms"], 25.0)
+        self.assertEqual(row["input_tokens"], 20)
+
+    def test_single_turn_shorthand_still_scores(self):
+        row = score_conversation(
+            CASE, [(response(answer="Approved policy.", sources=["kb_001"]),
+                    trace(["kb_001"]))], self.dataset)
+        self.assertTrue(row["passed"], row["checks"])
+        self.assertEqual(row["turn_count"], 1)
 
 
 class ComparisonTests(unittest.TestCase):
